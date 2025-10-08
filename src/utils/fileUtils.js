@@ -50,8 +50,3 @@ export const getFileIcon = (type) => {
   if (type.startsWith("text/")) return "FileCode";
   return "File";
 };
-
-export const generateMockUploadUrl = (filename) => {
-  const randomId = Math.random().toString(36).substring(7);
-  return `https://cdn.dropbox.app/uploads/${randomId}/${filename}`;
-};

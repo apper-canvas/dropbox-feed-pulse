@@ -1,18 +1,77 @@
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "react-toastify";
+import ApperIcon from "@/components/ApperIcon";
 import DropZone from "@/components/molecules/DropZone";
 import FileCard from "@/components/molecules/FileCard";
 import StatsBar from "@/components/molecules/StatsBar";
+import Error from "@/components/ui/Error";
 import Button from "@/components/atoms/Button";
-import ApperIcon from "@/components/ApperIcon";
-import { validateFile, generateMockUploadUrl } from "@/utils/fileUtils";
+import { validateFile } from "@/utils/fileUtils";
 
 const UploadManager = () => {
-  const [files, setFiles] = useState([]);
+const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const { ApperClient } = window.ApperSDK;
+  const apperClient = new ApperClient({
+    apperProjectId: import.meta.env.VITE_APPER_PROJECT_ID,
+    apperPublicKey: import.meta.env.VITE_APPER_PUBLIC_KEY
+  });
+
+  useEffect(() => {
+    fetchFiles();
+  }, []);
+
+  const fetchFiles = async () => {
+    try {
+      setLoading(true);
+      const params = {
+        fields: [
+          {"field": {"Name": "Id"}},
+          {"field": {"Name": "file_id_c"}},
+          {"field": {"Name": "name_c"}},
+          {"field": {"Name": "size_c"}},
+          {"field": {"Name": "type_c"}},
+          {"field": {"Name": "status_c"}},
+          {"field": {"Name": "progress_c"}},
+          {"field": {"Name": "uploaded_url_c"}},
+          {"field": {"Name": "error_c"}},
+          {"field": {"Name": "timestamp_c"}}
+        ],
+        orderBy: [{"fieldName": "Id", "sorttype": "DESC"}]
+      };
+      
+      const response = await apperClient.fetchRecords('file_c', params);
+      
+      if (!response?.data?.length) {
+        setFiles([]);
+      } else {
+        const mappedFiles = response.data.map(record => ({
+          id: record.file_id_c,
+          dbId: record.Id,
+          file: null,
+          name: record.name_c,
+          size: record.size_c,
+          type: record.type_c,
+          status: record.status_c,
+          progress: record.progress_c || 0,
+          uploaded_url_c: record.uploaded_url_c,
+          error: record.error_c,
+          timestamp: new Date(record.timestamp_c)
+        }));
+        setFiles(mappedFiles);
+      }
+    } catch (error) {
+      console.error("Error fetching files:", error?.response?.data?.message || error);
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
+  };
   const [isUploading, setIsUploading] = useState(false);
 
-  const handleFilesSelected = (newFiles) => {
+const handleFilesSelected = (newFiles) => {
     const validatedFiles = newFiles.map((file) => {
       const validation = validateFile(file);
       const fileId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -25,7 +84,7 @@ const UploadManager = () => {
         type: file.type,
         status: validation.isValid ? "pending" : "failed",
         progress: 0,
-        uploadedUrl: null,
+        uploaded_url_c: null,
         error: validation.error,
         timestamp: new Date()
       };
@@ -45,46 +104,103 @@ const UploadManager = () => {
     }
   };
 
-  const simulateUpload = (fileId) => {
+const simulateUpload = async (fileId, dbId) => {
     return new Promise((resolve) => {
       let progress = 0;
-      const interval = setInterval(() => {
+      const interval = setInterval(async () => {
         progress += Math.random() * 15;
         if (progress >= 100) {
           progress = 100;
           clearInterval(interval);
           resolve();
         }
+        
+        const currentProgress = Math.min(progress, 100);
         setFiles(prev =>
           prev.map(f =>
-            f.id === fileId ? { ...f, progress: Math.min(progress, 100) } : f
+            f.id === fileId ? { ...f, progress: currentProgress } : f
           )
         );
+
+        if (dbId) {
+          try {
+            await apperClient.updateRecord('file_c', {
+              records: [{
+                Id: dbId,
+                progress_c: Math.floor(currentProgress),
+                status_c: currentProgress < 100 ? "uploading" : "complete"
+              }]
+            });
+          } catch (error) {
+            console.error("Error updating progress:", error);
+          }
+        }
       }, 300);
     });
   };
 
-  const uploadFile = async (fileId) => {
-    setFiles(prev =>
-      prev.map(f => (f.id === fileId ? { ...f, status: "uploading" } : f))
-    );
-
+const uploadFile = async (fileId) => {
+    const file = files.find(f => f.id === fileId);
+    
     try {
-      await simulateUpload(fileId);
+      const createParams = {
+        records: [{
+          file_id_c: fileId,
+          name_c: file.name,
+          size_c: file.size,
+          type_c: file.type,
+          status_c: "uploading",
+          progress_c: 0,
+          uploaded_url_c: null,
+          error_c: null,
+          timestamp_c: new Date().toISOString()
+        }]
+      };
       
-      const file = files.find(f => f.id === fileId);
-      const uploadedUrl = generateMockUploadUrl(file.name);
+      const createResponse = await apperClient.createRecord('file_c', createParams);
+      
+      if (!createResponse.success) {
+        throw new Error(createResponse.message);
+      }
+
+      const dbId = createResponse.results[0].data.Id;
+      
+      setFiles(prev =>
+        prev.map(f => (f.id === fileId ? { ...f, status: "uploading", dbId } : f))
+      );
+
+      await simulateUpload(fileId, dbId);
+      
+      const randomId = Math.random().toString(36).substring(7);
+      const uploadedUrl = `https://cdn.dropbox.app/uploads/${randomId}/${file.name}`;
+
+      const updateParams = {
+        records: [{
+          Id: dbId,
+          status_c: "complete",
+          progress_c: 100,
+          uploaded_url_c: uploadedUrl
+        }]
+      };
+      
+      const updateResponse = await apperClient.updateRecord('file_c', updateParams);
+      
+      if (!updateResponse.success) {
+        throw new Error(updateResponse.message);
+      }
 
       setFiles(prev =>
         prev.map(f =>
           f.id === fileId
-            ? { ...f, status: "complete", progress: 100, uploadedUrl }
+            ? { ...f, status: "complete", progress: 100, uploaded_url_c: uploadedUrl }
             : f
         )
       );
 
       toast.success(`${file.name} uploaded successfully!`);
     } catch (error) {
+      console.error("Error uploading file:", error?.response?.data?.message || error);
+      
       setFiles(prev =>
         prev.map(f =>
           f.id === fileId
@@ -92,6 +208,21 @@ const UploadManager = () => {
             : f
         )
       );
+      
+      if (file.dbId) {
+        try {
+          await apperClient.updateRecord('file_c', {
+            records: [{
+              Id: file.dbId,
+              status_c: "failed",
+              error_c: "Upload failed"
+            }]
+          });
+        } catch (updateError) {
+          console.error("Error updating failed status:", updateError);
+        }
+      }
+      
       toast.error(`Failed to upload file`);
     }
   };
@@ -110,30 +241,41 @@ const UploadManager = () => {
     }
 
     setIsUploading(false);
-  };
+244]    setIsUploading(false);
+245]  };
+246:
 
-  const handleRemoveFile = (fileId) => {
+const handleRemoveFile = async (fileId) => {
     const file = files.find(f => f.id === fileId);
-    if (file.status === "uploading") {
-      if (window.confirm("This file is currently uploading. Are you sure you want to cancel?")) {
-        setFiles(prev => prev.filter(f => f.id !== fileId));
-        toast.info("Upload cancelled");
+    
+    if (file?.dbId) {
+      try {
+        await apperClient.deleteRecord('file_c', {
+          RecordIds: [file.dbId]
+        });
+      } catch (error) {
+        console.error("Error deleting file record:", error);
       }
-    } else {
-      setFiles(prev => prev.filter(f => f.id !== fileId));
-      toast.info("File removed from queue");
     }
+    
+    setFiles(prev => prev.filter(f => f.id !== fileId));
   };
 
-  const handleClearCompleted = () => {
-    const completedCount = files.filter(f => f.status === "complete").length;
-    if (completedCount === 0) {
-      toast.info("No completed files to clear");
-      return;
+  const handleClearCompleted = async () => {
+    const completedFiles = files.filter(f => f.status === "complete");
+    const dbIds = completedFiles.map(f => f.dbId).filter(id => id);
+    
+    if (dbIds.length > 0) {
+      try {
+        await apperClient.deleteRecord('file_c', {
+          RecordIds: dbIds
+        });
+      } catch (error) {
+        console.error("Error deleting completed files:", error);
+      }
     }
-
+    
     setFiles(prev => prev.filter(f => f.status !== "complete"));
-    toast.success(`${completedCount} completed file(s) cleared`);
   };
 
   const stats = {
@@ -143,9 +285,11 @@ const UploadManager = () => {
     totalSize: files.reduce((sum, f) => sum + f.size, 0)
   };
 
-  const pendingFiles = files.filter(f => f.status === "pending");
-  const activeFiles = files.filter(f => f.status !== "complete");
-  const completedFiles = files.filter(f => f.status === "complete");
+310:const pendingFiles = files.filter(f => f.status === "pending");
+311:  const activeFiles = files.filter(f => f.status !== "complete");
+312:  const completedFiles = files.filter(f => f.status === "complete");
+313:
+314:  return (
 
   return (
     <div className="space-y-8">

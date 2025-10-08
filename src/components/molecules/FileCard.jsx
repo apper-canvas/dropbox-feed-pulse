@@ -89,12 +89,12 @@ const FileCard = ({ file, onRemove }) => {
           <ProgressBar progress={file.progress} showPercentage={true} />
         )}
 
-        {file.status === "complete" && file.uploadedUrl && (
+{file.status === "complete" && file.uploaded_url_c && (
           <div className="flex items-center gap-2 p-3 bg-gradient-to-r from-success/5 to-emerald-50/50 rounded-lg border border-success/20">
             <ApperIcon name="Link" size={16} className="text-success flex-shrink-0" />
             <input
               type="text"
-              value={file.uploadedUrl}
+              value={file.uploaded_url_c}
               readOnly
               className="flex-1 bg-transparent text-sm text-gray-700 outline-none font-mono"
             />
@@ -102,7 +102,7 @@ const FileCard = ({ file, onRemove }) => {
               variant="ghost"
               size="sm"
               onClick={() => {
-                navigator.clipboard.writeText(file.uploadedUrl);
+                navigator.clipboard.writeText(file.uploaded_url_c);
               }}
               className="flex-shrink-0"
             >

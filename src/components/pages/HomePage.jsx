@@ -1,11 +1,27 @@
+import { useContext } from "react";
 import { motion } from "framer-motion";
 import ApperIcon from "@/components/ApperIcon";
+import Button from "@/components/atoms/Button";
 import UploadManager from "@/components/organisms/UploadManager";
-
+import { AuthContext } from "@/App";
 const HomePage = () => {
+  const { logout } = useContext(AuthContext);
+
   return (
     <div className="min-h-screen py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
+        <div className="flex justify-end mb-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={logout}
+            className="flex items-center gap-2"
+          >
+            <ApperIcon name="LogOut" size={16} />
+            Logout
+          </Button>
+        </div>
+        
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
