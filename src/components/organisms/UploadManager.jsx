@@ -234,16 +234,14 @@ const uploadFile = async (fileId) => {
       return;
     }
 
-    setIsUploading(true);
+setIsUploading(true);
     
     for (const file of pendingFiles) {
       await uploadFile(file.id);
     }
-
+    
     setIsUploading(false);
-244]    setIsUploading(false);
-245]  };
-246:
+  };
 
 const handleRemoveFile = async (fileId) => {
     const file = files.find(f => f.id === fileId);
@@ -285,11 +283,9 @@ const handleRemoveFile = async (fileId) => {
     totalSize: files.reduce((sum, f) => sum + f.size, 0)
   };
 
-310:const pendingFiles = files.filter(f => f.status === "pending");
-311:  const activeFiles = files.filter(f => f.status !== "complete");
-312:  const completedFiles = files.filter(f => f.status === "complete");
-313:
-314:  return (
+const pendingFiles = files.filter(f => f.status === "pending");
+  const activeFiles = files.filter(f => f.status !== "complete");
+  const completedFiles = files.filter(f => f.status === "complete");
 
   return (
     <div className="space-y-8">
